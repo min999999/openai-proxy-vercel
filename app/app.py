@@ -6,6 +6,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# ✅ OpenAI API 키 환경변수에서 가져와 설정
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/v1/chat/completions", methods=["POST"])
