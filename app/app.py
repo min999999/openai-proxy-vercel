@@ -1,26 +1,37 @@
-import os
-import openai
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import aiohttp
+from loguru import logger
+from fastapi import FastAPI, Request, Response, HTTPException
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI(debug=True)
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+@app.api_route("/{path:path}", methods=["GET", "POST", "DELETE", "PUT", "PATCH"])
+async def proxy(request: Request, path: str):
+    if not path.startswith("v1"):
+        return Response("Welcome to OpenAI Proxy")
 
-@app.route("/v1/chat/completions", methods=["POST"])
-def chat_completions():
-    try:
-        data = request.get_json()
-        response = openai.ChatCompletion.create(**data)
-        return jsonify(response), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    headers = dict(request.headers)
+    auth_key = headers.get("authorization")
+    if not auth_key:
+        raise HTTPException(status_code=401, detail="Authorization key is required")
 
-@app.route("/")
-def home():
-    return "✅ OpenAI Proxy is Running"
-
-if __name__ == "__main__":
-    app.run()
-Commit message
+    target_url = f"https://api.openai.com/{path}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                headers={
+                    "Authorization": headers.get("authorization"),
+                    "Content-Type": "application/json"
+                },
+                data=await request.body() if request.method != "GET" else None,
+            ) as response:
+                content = await response.read()
+                return Response(
+                    content=content,
+                    status_code=response.status,
+                    headers=dict(response.headers)
+                )
+        except Exception as e:
+            logger.error(f"Error during proxy forwarding: {e}")
+            return Response(f"Proxy error: {str(e)}", status_code=500)
